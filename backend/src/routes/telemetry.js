@@ -16,7 +16,10 @@ let sseClients = [];
 
 // Middleware to inject artificial errors if simulation is active
 export function errorSimulationMiddleware(req, res, next) {
-  if (simulateErrors && Math.random() < errorRate && req.path !== '/metrics' && req.path !== '/api/health') {
+  const isExcluded = req.path === '/metrics' || 
+                     req.path === '/api/health' || 
+                     req.path === '/api/simulate-errors';
+  if (simulateErrors && Math.random() < errorRate && !isExcluded) {
     return res.status(500).json({ error: 'Internal Server Error (Simulated)' });
   }
   next();
