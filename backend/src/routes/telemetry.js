@@ -1,6 +1,6 @@
 import express from 'express';
 import pool from '../db.js';
-import { redisClient } from '../redis.js';
+import { redisClient, redisPub } from '../redis.js';
 import { 
   activeSseConnections 
 } from '../metrics.js';
@@ -40,13 +40,30 @@ router.get('/health', (req, res) => {
   });
 });
 
+export function updateErrorSimulationState(active, rate) {
+  simulateErrors = active;
+  errorRate = rate;
+  console.log(`Local error simulation state updated via Redis: active=${simulateErrors}, rate=${errorRate}`);
+}
+
 // Toggle error simulation (extremely useful for demonstrating canary deployment rollbacks!)
-router.post('/simulate-errors', (req, res) => {
+router.post('/simulate-errors', async (req, res) => {
   const { active, rate } = req.body;
-  simulateErrors = !!active;
-  errorRate = typeof rate === 'number' ? Math.max(0, Math.min(1, rate)) : 0.5;
-  console.log(`Error simulation updated: active=${simulateErrors}, rate=${errorRate}`);
-  res.json({ active: simulateErrors, rate: errorRate });
+  const newActive = !!active;
+  const newRate = typeof rate === 'number' ? Math.max(0, Math.min(1, rate)) : 0.5;
+  
+  try {
+    await redisPub.publish('control-commands', JSON.stringify({
+      type: 'error-simulation',
+      active: newActive,
+      rate: newRate
+    }));
+    console.log(`Published error simulation toggle to Redis: active=${newActive}, rate=${newRate}`);
+    res.json({ active: newActive, rate: newRate });
+  } catch (err) {
+    console.error('Failed to publish error simulation control command:', err);
+    res.status(500).json({ error: 'Failed to update error simulation' });
+  }
 });
 
 // Server-Sent Events Route for real-time transaction updates

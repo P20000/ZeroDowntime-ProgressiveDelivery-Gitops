@@ -10,7 +10,8 @@ import invoicesRouter from './routes/invoices.js';
 import statsRouter from './routes/stats.js';
 import telemetryRouter, { 
   errorSimulationMiddleware, 
-  broadcastTransaction 
+  broadcastTransaction,
+  updateErrorSimulationState
 } from './routes/telemetry.js';
 
 // Modular Worker Imports
@@ -46,13 +47,19 @@ async function startServer() {
     await initRedis();
     console.log('Redis client successfully initialized.');
 
-    // Subscribe the shared Subscriber to Redis channel 'transactions'
-    console.log('Subscribing to Redis transactions channel...');
+    // Subscribe the shared Subscriber to Redis channels
+    console.log('Subscribing to Redis channels...');
     await redisSub.subscribe('transactions', (message) => {
       const transaction = JSON.parse(message);
       broadcastTransaction(transaction);
     });
-    console.log('Successfully subscribed to transactions channel.');
+    await redisSub.subscribe('control-commands', (message) => {
+      const command = JSON.parse(message);
+      if (command.type === 'error-simulation') {
+        updateErrorSimulationState(command.active, command.rate);
+      }
+    });
+    console.log('Successfully subscribed to Redis channels.');
 
     // Start generating simulated transactions traffic
     startSimulator();
