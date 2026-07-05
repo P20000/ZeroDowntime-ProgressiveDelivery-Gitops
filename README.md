@@ -245,6 +245,19 @@ when you make changes to the backend and push, the pipeline updates the rollout.
 
 you can watch this progress in real-time in the argo CD dashboard!
 
+### observability dashboard (grafana)
+
+we also deployed grafana to visualize the prometheus metrics exported by the backend.
+
+you can access it locally at: http://localhost:3000
+no login is required (anonymous access is configured as admin).
+
+the dashboard **"AuraFinance Telemetry"** is pre-loaded and tracks:
+1. **HTTP Request Rate:** live traffic volume showing requests per second.
+2. **HTTP Success Rate (%):** tracks availability, dropping when error simulation is active.
+3. **Business Transaction Frequency (Inflow vs Outflow):** breakdown of simulated financial transactions.
+4. **Active SSE connections:** the number of dashboard frontend client streams currently open.
+
 ### running it all with one script
 
 to make things easier, we created a single bash script `deploy.sh` that serves as a CLI to manage the local setup.
