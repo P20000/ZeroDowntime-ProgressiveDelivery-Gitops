@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: finops
+data:
+  POSTGRES_DB: fintechdb
+  POSTGRES_USER: fintech
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+  namespace: finops
+type: Opaque
+stringData:
+  POSTGRES_PASSWORD: fintech_secret_123

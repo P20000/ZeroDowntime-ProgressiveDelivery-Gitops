@@ -1,0 +1,29 @@
+# AnalysisTemplate — the automated canary health gate.
+#
+# This is what makes it truly "Zero-Downtime Progressive Delivery":
+# Argo Rollouts queries Prometheus with this PromQL expression at every analysis step.
+# If the HTTP success rate (non-5xx responses) drops below 95%, the rollout is ABORTED
+# and the cluster automatically rolls back to the previous stable version.
+# No human needs to be watching. No manual intervention required.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: success-rate-check
+  namespace: finops
+spec:
+  metrics:
+    - name: success-rate
+      # Run the analysis every 30 seconds, for a total of 5 minutes
+      interval: 30s
+      count: 10
+      # Fail the analysis (triggering rollback) if success rate drops below 95%
+      successCondition: result[0] >= 0.95
+      failureLimit: 2
+      provider:
+        prometheus:
+          # This points to the Prometheus service we'll deploy inside the cluster
+          address: http://prometheus-service.finops.svc.cluster.local:9090
+          query: |
+            sum(rate(http_requests_total{status_code!~"5.."}[2m]))
+            /
+            sum(rate(http_requests_total[2m]))

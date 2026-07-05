@@ -1,0 +1,29 @@
+# Two services are required for canary traffic splitting with Argo Rollouts.
+# Argo Rollouts dynamically manages the pod selectors on these services
+# to control what percentage of traffic goes to stable vs canary pods.
+
+# Stable service — handles the main production load.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fintech-backend-stable
+  namespace: finops
+spec:
+  selector:
+    app: fintech-backend
+  ports:
+    - port: 5000
+      targetPort: 5000
+---
+# Canary service — receives only the small canary traffic percentage.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fintech-backend-canary
+  namespace: finops
+spec:
+  selector:
+    app: fintech-backend
+  ports:
+    - port: 5000
+      targetPort: 5000

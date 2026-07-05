@@ -1,0 +1,32 @@
+# This is the Argo CD Application resource.
+# It tells Argo CD WHERE to find the manifests (your GitHub repo)
+# and WHERE to deploy them (the finops namespace in this cluster).
+#
+# Once applied, Argo CD will:
+# 1. Continuously poll your GitHub repo every 3 minutes.
+# 2. Auto-sync any manifest changes to the cluster.
+# 3. Display the live health of every resource in its UI dashboard.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: fintech-app
+  namespace: argocd
+spec:
+  project: default
+  source:
+    # IMPORTANT: Update this to your actual GitHub repository URL.
+    repoURL: https://github.com/P20000/ZeroDowntime-ProgressiveDelivery-Gitops.git
+    targetRevision: main
+    # Path inside the repo where Argo CD should look for manifests
+    path: k8s/base
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: finops
+  syncPolicy:
+    automated:
+      # Automatically delete resources removed from git
+      prune: true
+      # Automatically heal resources that have drifted from the desired git state
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

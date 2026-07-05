@@ -1,0 +1,32 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fintech-ingress
+  namespace: finops
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    # Route SSE requests to the backend without buffering (critical for real-time streaming)
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: fintech.local
+      http:
+        paths:
+          # API and SSE traffic goes to the stable backend service
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: fintech-backend-stable
+                port:
+                  number: 5000
+          # All other traffic goes to the frontend (React app)
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: fintech-frontend
+                port:
+                  number: 80

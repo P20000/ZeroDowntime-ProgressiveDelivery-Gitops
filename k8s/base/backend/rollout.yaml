@@ -1,0 +1,77 @@
+# This is the star of the show — an Argo Rollout with a Canary strategy.
+# Instead of a standard Deployment, Argo Rollouts manages progressive traffic shifting
+# and integrates with Prometheus for Automated Canary Analysis (ACA).
+#
+# How it works:
+# 1. When a new image tag is committed to Git, Argo CD syncs this file to the cluster.
+# 2. Argo Rollouts starts shifting traffic: 20% goes to the new canary version.
+# 3. It runs a Prometheus AnalysisRun to query the HTTP error rate.
+# 4. If the error rate stays below 5% for 5 minutes -> promote to 100%.
+# 5. If the error rate spikes above 5% -> automatic rollback. Zero downtime, zero human intervention.
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: fintech-backend
+  namespace: finops
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: fintech-backend
+  template:
+    metadata:
+      labels:
+        app: fintech-backend
+    spec:
+      containers:
+        - name: backend
+          # IMPORTANT: This image tag is managed by the CI pipeline.
+          # The GitHub Actions workflow will update this line automatically on every successful build.
+          image: fintech-backend:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5000
+          envFrom:
+            - configMapRef:
+                name: backend-config
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 5000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 5000
+            initialDelaySeconds: 30
+            periodSeconds: 20
+  strategy:
+    canary:
+      # The stable service handles the main production traffic.
+      # The canary service receives the small % of test traffic.
+      stableService: fintech-backend-stable
+      canaryService: fintech-backend-canary
+      steps:
+        # Step 1: Route 20% of traffic to the new version.
+        - setWeight: 20
+        # Step 2: Run automated Prometheus analysis before proceeding.
+        - analysis:
+            templates:
+              - templateName: success-rate-check
+        # Step 3: If analysis passes, promote to 50%.
+        - setWeight: 50
+        # Step 4: Pause for 2 minutes and re-analyse.
+        - pause:
+            duration: 2m
+        - analysis:
+            templates:
+              - templateName: success-rate-check
+        # Step 5: Full promotion to 100%.
+        - setWeight: 100
