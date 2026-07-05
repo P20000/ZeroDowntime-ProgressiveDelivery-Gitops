@@ -1,0 +1,112 @@
+# Zero-Downtime Progressive Delivery — CI Pipeline
+#
+# How this fits into the GitOps loop:
+#   1. Developer pushes code to main.
+#   2. This workflow builds a new Docker image and pushes it to GitHub Container Registry (GHCR).
+#   3. It then updates the image tag in k8s/base/backend/rollout.yaml and commits the change back.
+#   4. Argo CD detects the new commit within ~3 minutes and syncs the Rollout to the cluster.
+#   5. Argo Rollouts starts shifting traffic: 20% canary -> Prometheus analysis -> promote or ROLLBACK.
+#
+# No secrets setup required — GITHUB_TOKEN is automatically provided by GitHub Actions.
+
+name: CI — Build, Push & Update Manifest
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      # Only trigger when backend application code changes
+      - 'backend/**'
+      - '.github/workflows/ci.yaml'
+
+env:
+  REGISTRY: ghcr.io
+  # Image name is derived from the repository owner and name automatically
+  IMAGE_NAME: ${{ github.repository_owner }}/fintech-backend
+
+jobs:
+  build-and-push:
+    name: Build & Push Backend Image
+    runs-on: ubuntu-latest
+    # Required permissions for pushing to GHCR and committing back to the repo
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history so we can push commits back
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Docker Buildx (multi-arch support) ─────────────────────────────────
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ── Log in to GitHub Container Registry ────────────────────────────────
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Generate a unique, traceable image tag ──────────────────────────────
+      # We use the short Git SHA so every image is tied to an exact commit.
+      # This makes rollbacks trivial — just revert the commit in git.
+      - name: Generate image tag
+        id: meta
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "tag=sha-${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "full_image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "Image will be tagged: sha-${SHORT_SHA}"
+
+      # ── Build and push the backend image ────────────────────────────────────
+      - name: Build and push backend Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend
+          push: true
+          # Tag with both the SHA tag (immutable) and 'latest' (for convenience)
+          tags: |
+            ${{ steps.meta.outputs.full_image }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          # Cache layers from the previous build to speed up subsequent runs
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # ── GitOps Handoff: Update the manifest with the new image tag ──────────
+      # This is the core of the GitOps pattern.
+      # Instead of telling Kubernetes directly, we update the desired state in Git.
+      # Argo CD will then detect this commit and trigger the Argo Rollout.
+      - name: Update image tag in Kubernetes Rollout manifest
+        run: |
+          NEW_IMAGE="${{ steps.meta.outputs.full_image }}"
+          echo "Updating rollout.yaml to use image: ${NEW_IMAGE}"
+
+          # Replace the image line in the Rollout spec
+          sed -i "s|image: .*fintech-backend.*|image: ${NEW_IMAGE}|g" \
+            k8s/base/backend/rollout.yaml
+
+          echo "--- Updated rollout.yaml image line ---"
+          grep "image:" k8s/base/backend/rollout.yaml
+
+      - name: Commit and push updated manifest
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add k8s/base/backend/rollout.yaml
+
+          # Only commit if there was actually a change
+          if git diff --staged --quiet; then
+            echo "No manifest changes to commit."
+          else
+            git commit -m "ci: update backend image to ${{ steps.meta.outputs.tag }} [skip ci]"
+            git push origin main
+            echo "✅ Manifest updated. Argo CD will now detect this commit and trigger the Rollout."
+          fi

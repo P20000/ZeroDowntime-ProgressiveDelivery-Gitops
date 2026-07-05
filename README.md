@@ -160,3 +160,30 @@ docker build -t fintech-backend:v1 ./backend
 docker build -t fintech-frontend:v1 ./frontend
 ```
 then we can simply push this repository to refresh from the repository state into the argo cd and so that we can create those resources.
+
+after that we can run this command to get the argocd port started without any effort: 
+
+```bash 
+kubectl apply -f k8s/argocd-app.yaml
+```
+then don't forget to portforward at port 8181 from the argocd server 
+```bash 
+kubectl port-forward svc/argocd-server -n argocd 8181:443
+```
+note: add -d at the end for making it run in the background 
+
+and the argocd will be avaialble at this place : 
+
+https://localhost:8181 
+
+in that link we can see that the fintech app dummy is running like so : 
+
+![fintech app in argocd dashboard](./img/dashboard.png)
+
+we can also see the same from the minikube dashboard 
+```bash 
+minikube dashboard
+```
+![fintech app in minikube dashboard](./img/dashboard-minikube.png)
+
+now both of them are working fine, 
