@@ -95,9 +95,18 @@ start_deployments() {
   echo "💻 Starting port-forward for Frontend Dashboard on http://localhost:8080..."
   nohup kubectl port-forward svc/fintech-frontend -n finops 8080:80 >/dev/null 2>&1 &
 
+  echo "⏳ Waiting for Grafana service to be created by Argo CD..."
+  until kubectl get svc grafana -n finops >/dev/null 2>&1; do
+    sleep 2
+  done
+
+  echo "📊 Starting port-forward for Grafana on http://localhost:3000..."
+  nohup kubectl port-forward svc/grafana -n finops 3000:3000 >/dev/null 2>&1 &
+
   echo "🎉 Done! Application is ready."
   echo "🔗 Frontend Dashboard: http://localhost:8080"
   echo "🔗 Argo CD Server: https://localhost:8181"
+  echo "🔗 Grafana Dashboard: http://localhost:3000"
 }
 
 # Function to stop everything
