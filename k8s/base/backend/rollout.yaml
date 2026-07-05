@@ -27,7 +27,7 @@ spec:
         - name: backend
           # IMPORTANT: This image tag is managed by the CI pipeline.
           # The GitHub Actions workflow will update this line automatically on every successful build.
-          image: ghcr.io/p20000/fintech-backend:sha-49675c1
+          image: ghcr.io/p20000/fintech-backend:sha-35f5940
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 5000
