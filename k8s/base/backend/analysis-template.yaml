@@ -24,6 +24,7 @@ spec:
           # This points to the Prometheus service we'll deploy inside the cluster
           address: http://prometheus-service.finops.svc.cluster.local:9090
           query: |
-            sum(rate(http_requests_total{status_code!~"5.."}[2m]))
+            (sum(rate(http_requests_total{status_code!~"5.."}[2m])) or vector(0))
             /
-            sum(rate(http_requests_total[2m]))
+            (sum(rate(http_requests_total[2m])) or vector(0))
+            or vector(1)
