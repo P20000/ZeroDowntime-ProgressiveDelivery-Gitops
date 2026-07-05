@@ -87,6 +87,11 @@ start_deployments() {
   echo "🌐 Starting port-forward for Argo CD on https://localhost:8181..."
   nohup kubectl port-forward svc/argocd-server -n argocd 8181:443 >/dev/null 2>&1 &
 
+  echo "⏳ Waiting for fintech-frontend service to be created by Argo CD..."
+  until kubectl get svc fintech-frontend -n finops >/dev/null 2>&1; do
+    sleep 2
+  done
+
   echo "💻 Starting port-forward for Frontend Dashboard on http://localhost:8080..."
   nohup kubectl port-forward svc/fintech-frontend -n finops 8080:80 >/dev/null 2>&1 &
 
