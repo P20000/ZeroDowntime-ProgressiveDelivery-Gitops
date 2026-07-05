@@ -170,7 +170,6 @@ then don't forget to portforward at port 8181 from the argocd server
 ```bash 
 kubectl port-forward svc/argocd-server -n argocd 8181:443
 ```
-note: add -d at the end for making it run in the background 
 
 and the argocd will be avaialble at this place : 
 
@@ -187,3 +186,69 @@ minikube dashboard
 ![fintech app in minikube dashboard](./img/dashboard-minikube.png)
 
 now both of them are working fine, 
+
+now we will move to the CI/CD part of the project. here first i will do the push to trigger mechanism and see if that is working. 
+
+i created the github actions workflow at ci.yaml to automate this. it does the following when anyone pushes to entire backend:
+1. builds the backend docker image using docker buildx.
+2. tags it with a short git commit sha (like `sha-85101f0`).
+3. pushes the image to github container registry (GHCR).
+4. updates the rollout image tag in `k8s/base/backend/rollout.yaml` to the new tag and commits it back to the repo automatically with `[skip ci]` to prevent loops.
+
+we also need to install the argo rollouts crds and controller in our cluster so that kubernetes can understand the `Rollout` and `AnalysisTemplate` types:
+```bash
+kubectl apply -n argo-rollouts -f https://github.com/argoproj/argo-rollouts/releases/latest/download/install.yaml
+```
+
+and then i checked if the controller was running properly:
+```bash
+kubectl get pods -n argo-rollouts
+```
+
+### fixing some deployment issues
+
+after argoCD synced, the backend pods started crashlooping, and the frontend pods were also failing. here is how we fixed them:
+
+1. **backend syntax error:** the backend pod log showed a syntax error at the bottom of `backend/src/server.js` because of a stray comment `# CI test`. i removed it, committed the fix, and let the CI pipeline build the new image.
+2. **frontend upstream error:** the frontend nginx proxy was trying to find a host named `backend` (which only exists in docker compose, not in k8s). i changed this inside `frontend/nginx.conf` to point to the stable service DNS `fintech-backend-stable` inside the k8s namespace. i then built the `v2` image:
+   ```bash
+   eval $(minikube docker-env)
+   docker build -t fintech-frontend:v2 ./frontend
+   ```
+   and updated `k8s/base/frontend/deployment.yaml` to use `fintech-frontend:v2`.
+3. **analysis template error:** the rollout analysis run was failing with `reflect: slice index out of range` because the prometheus metric query was empty at the start due to no traffic. i modified the query in `k8s/base/backend/analysis-template.yaml` to fallback gracefully when there's zero traffic:
+   ```yaml
+   query: |
+     (sum(rate(http_requests_total{status_code!~"5.."}[2m])) or vector(0))
+     /
+     (sum(rate(http_requests_total[2m])) or vector(0))
+     or vector(1)
+   ```
+
+### progressive canary promotion and verification
+
+now everything is healthy, we can access the dashboard by running a port-forward on the frontend service:
+```bash
+kubectl port-forward svc/fintech-frontend -n finops 8080:80
+```
+now the app is available at: http://localhost:8080
+
+when you make changes to the backend and push, the pipeline updates the rollout. the rollout will:
+1. route 20% of traffic to the new version.
+2. run prometheus analysis run for 10 checks (each check is 30 seconds).
+3. if success rate is >= 95%, it promotes to 50% traffic.
+4. pauses for 2 minutes for manual verification.
+5. runs a second analysis check.
+6. promotes to 100% traffic and terminates the old pods completely.
+
+you can watch this progress in real-time in the argo CD dashboard!
+
+### running it all with one script
+
+to make things easier, we created a single bash script `deploy-local.sh` that automates starting minikube, building docker images, committing and pushing local files to github, applying argoCD, and setting up background port forwards:
+```bash
+./deploy-local.sh
+```
+this script does all the heavy lifting in one go so we don't have to copy-paste commands!
+
+
