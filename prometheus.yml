@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 5s # Set scrape interval to 5s for rapid telemetry updates (excellent for canary testing)
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: 'fintech-backend'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['backend:5000']
