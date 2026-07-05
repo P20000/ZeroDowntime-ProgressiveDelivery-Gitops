@@ -209,25 +209,27 @@ kubectl get pods -n argo-rollouts
 
 after argoCD synced, the backend pods started crashlooping, and the frontend pods were also failing. here is how we fixed them:
 
-1. **backend syntax error:** the backend pod log showed a syntax error at the bottom of `backend/src/server.js` because of a stray comment `# CI test`. i removed it, committed the fix, and let the CI pipeline build the new image.
 2. **frontend upstream error:** the frontend nginx proxy was trying to find a host named `backend` (which only exists in docker compose, not in k8s). i changed this inside `frontend/nginx.conf` to point to the stable service DNS `fintech-backend-stable` inside the k8s namespace. i then built the `v2` image:
-   ```bash
-   eval $(minikube docker-env)
-   docker build -t fintech-frontend:v2 ./frontend
-   ```
-   and updated `k8s/base/frontend/deployment.yaml` to use `fintech-frontend:v2`.
-3. **analysis template error:** the rollout analysis run was failing with `reflect: slice index out of range` because the prometheus metric query was empty at the start due to no traffic. i modified the query in `k8s/base/backend/analysis-template.yaml` to fallback gracefully when there's zero traffic:
-   ```yaml
-   query: |
-     (sum(rate(http_requests_total{status_code!~"5.."}[2m])) or vector(0))
-     /
-     (sum(rate(http_requests_total[2m])) or vector(0))
-     or vector(1)
-   ```
+
+```bash
+eval $(minikube docker-env)
+docker build -t fintech-frontend:v2 ./frontend
+```
+
+and updated deployment.yaml to use fintech-frontend:v2.
+
+3. **analysis template error:** the rollout analysis run was failing with `reflect: slice index out of range` because the prometheus metric query was empty at the start due to no traffic. i modified the query in analysis-template.yaml to fallback gracefully when there's zero traffic:
+
+```yaml
+query: |
+  (sum(rate(http_requests_total{status_code!~"5.."}[2m])) or vector(0)) / (sum(rate(http_requests_total[2m])) or vector(0)) or vector(1)
+```
+this is the formula for the analysis run, which checks if the new version of the backend is healthy or not.
 
 ### progressive canary promotion and verification
 
 now everything is healthy, we can access the dashboard by running a port-forward on the frontend service:
+
 ```bash
 kubectl port-forward svc/fintech-frontend -n finops 8080:80
 ```
@@ -245,10 +247,20 @@ you can watch this progress in real-time in the argo CD dashboard!
 
 ### running it all with one script
 
-to make things easier, we created a single bash script `deploy-local.sh` that automates starting minikube, building docker images, committing and pushing local files to github, applying argoCD, and setting up background port forwards:
+to make things easier, we created a single bash script `deploy.sh` that serves as a CLI to manage the local setup.
+
+to start minikube, build docker images, commit & push, apply the configurations, and setup background port forwards:
 ```bash
-./deploy-local.sh
+./deploy.sh -start
+```
+
+to clean up the deployments and kill all active port forwards:
+```bash
+./deploy.sh -stop
 ```
 this script does all the heavy lifting in one go so we don't have to copy-paste commands!
+
+
+however same things can be achieved through use of terraform for provisioning a single compute engine or ec2 and the above commands can be run in ubuntu os. 
 
 
