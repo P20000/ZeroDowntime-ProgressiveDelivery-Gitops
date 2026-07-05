@@ -68,8 +68,8 @@ data:
                 "uid": "Prometheus"
               },
               "editorMode": "code",
-              "expr": "sum(rate(http_requests_total[1m]))",
-              "legendFormat": "Total RPS",
+              "expr": "sum(rate(http_requests_total[1m])) by (status_code)",
+              "legendFormat": "{{status_code}}",
               "range": true,
               "refId": "A"
             }
