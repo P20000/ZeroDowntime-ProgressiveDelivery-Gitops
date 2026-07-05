@@ -14,11 +14,10 @@ metadata:
 spec:
   project: default
   source:
-    # IMPORTANT: Update this to your actual GitHub repository URL.
     repoURL: https://github.com/P20000/ZeroDowntime-ProgressiveDelivery-Gitops.git
     targetRevision: main
-    # Path inside the repo where Argo CD should look for manifests
     path: k8s/base
+    kustomize: {}
   destination:
     server: https://kubernetes.default.svc
     namespace: finops
