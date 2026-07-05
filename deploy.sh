@@ -100,6 +100,9 @@ start_deployments() {
     sleep 2
   done
 
+  echo "⏳ Waiting for Grafana deployment to be fully ready..."
+  kubectl rollout status deployment/grafana -n finops --timeout=120s
+
   echo "📊 Starting port-forward for Grafana on http://localhost:3000..."
   nohup kubectl port-forward svc/grafana -n finops 3000:3000 >/dev/null 2>&1 &
 
