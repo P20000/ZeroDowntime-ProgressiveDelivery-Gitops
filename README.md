@@ -73,3 +73,90 @@ Prerequisites: Ensure you have **Docker** and **Docker Compose** installed.
 - [ ] Query Prometheus at `http://localhost:9095` for the metric `http_requests_total` to see traffic.
 - [ ] Flip the **DevOps Testing & Canary Rollback Controls** switch to active.
 - [ ] Refresh the page or perform actions. Verify in the network tab or console that some requests fail, and check `http_requests_total{status_code="500"}` in Prometheus to see the error rate spike.
+
+
+
+## Devops project stuff starts here: 
+
+firstly i started the minikube locally in the main directory for running the project locally with right flags: 
+```bash 
+minikube start \
+  --driver=docker \
+  --cpus=4 \
+  --memory=4096 \
+  --extra-config=kubelet.fail-swap-on=false \
+  --extra-config=kubelet.cgroup-driver=systemd
+```
+i used 4096 mb of ram because i've got 16 gigs of ram in my system. and i used 4 cores for minikube.
+
+i simply checked the nodes status by running the command: 
+
+```bash
+kubectl get nodes
+```
+
+and this gave me: 
+
+```bash
+NAME       STATUS   ROLES           AGE     VERSION
+minikube   Ready    control-plane   3m26s   v1.35.1
+```
+i then enabled the addons of ingress for minikube for using the ingress controller in this cluster. 
+```bash
+minikube addons enable ingress
+kubectl wait --namespace ingress-nginx \
+  --for=condition=ready pod \
+  --selector=app.kubernetes.io/component=controller \
+  --timeout=120s
+```
+these are the namespaces that we will use, first one is for finops which will have the project's own namespace and another one for the argocd for managing those manifests from kubernetes. 
+```bash 
+kubectl create namespace finops
+kubectl create namespace argocd
+```
+here i won't use the apply statement in this creation of the argocd namespace because it contains some long text lines for CRDs and that would lead to an error in k8s. it would look like: 
+```bash
+kubectl create -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+```
+
+and then i waited for the deployment of the argocd-server to be ready. note that this step ensures that there occurs no failure and if it has to occur then it would timeout by 5 minutes. 
+```bash
+kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd
+```
+
+now that the installation of the argoCD is complete, we can move to making the rest of the contents. 
+
+following is the argocd Structure that we have created : 
+
+```bash 
+k8s/
+├── argocd-app.yaml              for  Tells Argo CD to watch your GitHub repo
+└── base/
+    ├── namespace.yaml
+    ├── postgres/
+    │   ├── config.yaml          for  ConfigMap + Secret for credentials
+    │   ├── pvc.yaml             for  1Gi persistent volume for DB data
+    │   └── deployment.yaml      for  Postgres pod + ClusterIP service
+    ├── redis/
+    │   └── deployment.yaml      for  Redis pod + ClusterIP service
+    ├── backend/
+    │   ├── configmap.yaml       for  Env vars (DB host, Redis URL, port)
+    │   ├── rollout.yaml         for  Argo Rollout (20% → analysis → 50% → 100%)
+    │   ├── service.yaml         for  Stable + Canary services for traffic split
+    │   └── analysis-template.yaml  for  Prometheus health gate (auto-rollback!)
+    ├── frontend/
+    │   ├── deployment.yaml      for  Frontend pod + service
+    │   └── ingress.yaml         for  Routes /api → backend, / → frontend
+    └── prometheus/
+        └── deployment.yaml      for  In-cluster Prometheus that AnalysisTemplate queries
+
+```
+
+now we will build the images that we will feed into the minikube through here: 
+
+```bash 
+eval $(minikube docker-env)
+docker build -t fintech-backend:v1 ./backend
+docker build -t fintech-frontend:v1 ./frontend
+```
+then we can simply push this repository to refresh from the repository state into the argo cd and so that we can create those resources.
