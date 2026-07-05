@@ -22,8 +22,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # Image name is derived from the repository owner and name automatically
-  IMAGE_NAME: ${{ github.repository_owner }}/fintech-backend
+  # NOTE: image names are always lowercased in the meta step below
 
 jobs:
   build-and-push:
@@ -60,21 +59,24 @@ jobs:
       - name: Generate image tag
         id: meta
         run: |
+          # GHCR requires all image names to be lowercase — force it here
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
           echo "tag=sha-${SHORT_SHA}" >> $GITHUB_OUTPUT
-          echo "full_image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "full_image=${{ env.REGISTRY }}/${OWNER}/fintech-backend:sha-${SHORT_SHA}" >> $GITHUB_OUTPUT
+          echo "latest_image=${{ env.REGISTRY }}/${OWNER}/fintech-backend:latest" >> $GITHUB_OUTPUT
           echo "Image will be tagged: sha-${SHORT_SHA}"
 
       # ── Build and push the backend image ────────────────────────────────────
       - name: Build and push backend Docker image
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./backend
           push: true
           # Tag with both the SHA tag (immutable) and 'latest' (for convenience)
           tags: |
             ${{ steps.meta.outputs.full_image }}
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ steps.meta.outputs.latest_image }}
           # Cache layers from the previous build to speed up subsequent runs
           cache-from: type=gha
           cache-to: type=gha,mode=max
